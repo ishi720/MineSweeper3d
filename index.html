@@ -62,6 +62,7 @@
         #canvas-container {
             width: 100vw;
             height: 100vh;
+            cursor: default;
         }
     </style>
 </head>
@@ -76,7 +77,7 @@
     </div>
     <div id="status">
         <div class="emoji" id="face">🙂</div>
-        <div>💣 地雷: <span id="mines">50</span></div>
+        <div>💣 地雷: <span id="mines">30</span></div>
         <div>🚩 旗: <span id="flags">0</span></div>
     </div>
     <div id="canvas-container"></div>
@@ -86,13 +87,14 @@
         let scene, camera, renderer, raycaster, mouse;
         let grid = [];
         let gridSize = 10;
-        let mineCount = 50;
+        let mineCount = 30;
         let flagCount = 0;
         let revealedCount = 0;
         let gameOver = false;
         let cubes = [];
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
+        let hoveredCube = null;
 
         // 色の定義
         const colors = {
@@ -173,6 +175,7 @@
             grid = [];
             cubes.forEach(cube => scene.remove(cube));
             cubes = [];
+            hoveredCube = null;
             gameOver = false;
             flagCount = 0;
             revealedCount = 0;
@@ -416,6 +419,7 @@
         }
 
         function onMouseMove(event) {
+            // ドラッグによる回転
             if (event.buttons === 1) {
                 isDragging = true;
                 const deltaX = event.movementX;
@@ -441,6 +445,40 @@
                 camera.lookAt(0, 0, 0);
             } else {
                 setTimeout(() => { isDragging = false; }, 100);
+            }
+
+            // ホバー検出
+            if (!isDragging && !gameOver) {
+                updateMousePosition(event);
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(cubes);
+
+                // 前回ホバーしていたキューブの色を元に戻す
+                if (hoveredCube && hoveredCube.visible) {
+                    const { x, y, z } = hoveredCube.userData;
+                    const cell = grid[x][y][z];
+                    if (!cell.isRevealed) {
+                        hoveredCube.material.color.setHex(cell.isFlagged ? colors.flag : colors.unrevealed);
+                    }
+                }
+
+                hoveredCube = null;
+
+                // 最初の表示されているキューブを見つけてハイライト
+                for (let i = 0; i < intersects.length; i++) {
+                    const cube = intersects[i].object;
+                    if (cube.visible) {
+                        const { x, y, z } = cube.userData;
+                        const cell = grid[x][y][z];
+                        if (!cell.isRevealed) {
+                            hoveredCube = cube;
+                            // ホバー時は少し明るくする
+                            const hoverColor = cell.isFlagged ? 0xffd700 : 0x5dade2;
+                            cube.material.color.setHex(hoverColor);
+                        }
+                        break;
+                    }
+                }
             }
         }
 
