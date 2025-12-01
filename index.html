@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D マインスイーパー</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px 20px;
+            border-radius: 10px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+        #info h2 {
+            margin: 0 0 10px 0;
+            font-size: 24px;
+        }
+        #info p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        #status {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px 20px;
+            border-radius: 10px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            text-align: right;
+        }
+        #status .emoji {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h2>3D マインスイーパー</h2>
+        <p>左クリック: マスを開く</p>
+        <p>右クリック: 旗を立てる</p>
+        <p>ドラッグ: 回転</p>
+        <p>ホイール: ズーム</p>
+        <button onclick="resetGame()">新しいゲーム</button>
+    </div>
+    <div id="status">
+        <div class="emoji" id="face">🙂</div>
+        <div>💣 地雷: <span id="mines">50</span></div>
+        <div>🚩 旗: <span id="flags">0</span></div>
+    </div>
+    <div id="canvas-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, raycaster, mouse;
+        let grid = [];
+        let gridSize = 10;
+        let mineCount = 50;
+        let flagCount = 0;
+        let revealedCount = 0;
+        let gameOver = false;
+        let cubes = [];
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+
+        // 色の定義
+        const colors = {
+            unrevealed: 0x3498db,
+            revealed: 0xecf0f1,
+            mine: 0xe74c3c,
+            flag: 0xf39c12,
+            numbers: [
+                0xecf0f1, // 0
+                0x3498db, // 1
+                0x2ecc71, // 2
+                0xf39c12, // 3
+                0xe74c3c, // 4
+                0x9b59b6, // 5
+                0x1abc9c, // 6
+                0x34495e, // 7
+                0xe67e22  // 8
+            ]
+        };
+
+        function init() {
+            // シーンの設定
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+            scene.fog = new THREE.Fog(0x000000, 30, 100);
+
+            // カメラの設定
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(gridSize * 1.2, gridSize * 1.2, gridSize * 1.2);
+            camera.lookAt(0, 0, 0);
+
+            // レンダラーの設定
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // ライトの設定
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 20, 10);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+
+            // Raycasterの設定
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // ゲームの初期化
+            initGame();
+
+            // イベントリスナー
+            renderer.domElement.addEventListener('click', onMouseClick);
+            renderer.domElement.addEventListener('contextmenu', onRightClick);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('wheel', onWheel);
+            window.addEventListener('resize', onWindowResize);
+
+            // アニメーション開始
+            animate();
+        }
+
+        function initGame() {
+            // グリッドとキューブをクリア
+            for (let x = 0; x < gridSize; x++) {
+                for (let y = 0; y < gridSize; y++) {
+                    for (let z = 0; z < gridSize; z++) {
+                        if (grid[x] && grid[x][y] && grid[x][y][z]) {
+                            if (grid[x][y][z].textMesh) {
+                                scene.remove(grid[x][y][z].textMesh);
+                            }
+                        }
+                    }
+                }
+            }
+            grid = [];
+            cubes.forEach(cube => scene.remove(cube));
+            cubes = [];
+            gameOver = false;
+            flagCount = 0;
+            revealedCount = 0;
+            updateStatus();
+
+            // 3Dグリッドの初期化
+            for (let x = 0; x < gridSize; x++) {
+                grid[x] = [];
+                for (let y = 0; y < gridSize; y++) {
+                    grid[x][y] = [];
+                    for (let z = 0; z < gridSize; z++) {
+                        grid[x][y][z] = {
+                            isMine: false,
+                            isRevealed: false,
+                            isFlagged: false,
+                            neighborMines: 0,
+                            cube: null,
+                            textMesh: null
+                        };
+                    }
+                }
+            }
+
+            // 地雷を配置
+            let minesPlaced = 0;
+            while (minesPlaced < mineCount) {
+                const x = Math.floor(Math.random() * gridSize);
+                const y = Math.floor(Math.random() * gridSize);
+                const z = Math.floor(Math.random() * gridSize);
+                if (!grid[x][y][z].isMine) {
+                    grid[x][y][z].isMine = true;
+                    minesPlaced++;
+                }
+            }
+
+            // 周囲の地雷数を計算
+            for (let x = 0; x < gridSize; x++) {
+                for (let y = 0; y < gridSize; y++) {
+                    for (let z = 0; z < gridSize; z++) {
+                        if (!grid[x][y][z].isMine) {
+                            grid[x][y][z].neighborMines = countNeighborMines(x, y, z);
+                        }
+                    }
+                }
+            }
+
+            // キューブを作成
+            createCubes();
+        }
+
+        function createCubes() {
+            const offset = gridSize / 2 - 0.5;
+
+            for (let x = 0; x < gridSize; x++) {
+                for (let y = 0; y < gridSize; y++) {
+                    for (let z = 0; z < gridSize; z++) {
+                        const geometry = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+                        const material = new THREE.MeshPhongMaterial({
+                            color: colors.unrevealed,
+                            shininess: 100,
+                            transparent: true,
+                            opacity: 0.8
+                        });
+                        const cube = new THREE.Mesh(geometry, material);
+                        cube.position.set(x - offset, y - offset, z - offset);
+                        cube.castShadow = true;
+                        cube.receiveShadow = true;
+                        cube.userData = { x, y, z };
+                        scene.add(cube);
+                        cubes.push(cube);
+                        grid[x][y][z].cube = cube;
+                    }
+                }
+            }
+        }
+
+        function countNeighborMines(x, y, z) {
+            let count = 0;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dz = -1; dz <= 1; dz++) {
+                        if (dx === 0 && dy === 0 && dz === 0) continue;
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        const nz = z + dz;
+                        if (nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize && nz >= 0 && nz < gridSize) {
+                            if (grid[nx][ny][nz].isMine) count++;
+                        }
+                    }
+                }
+            }
+            return count;
+        }
+
+        function onMouseClick(event) {
+            if (gameOver || isDragging) return;
+
+            updateMousePosition(event);
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(cubes);
+
+            // 最初の表示されているキューブを見つける
+            for (let i = 0; i < intersects.length; i++) {
+                const cube = intersects[i].object;
+                if (cube.visible) {
+                    const { x, y, z } = cube.userData;
+                    revealCell(x, y, z);
+                    break;
+                }
+            }
+        }
+
+        function onRightClick(event) {
+            event.preventDefault();
+            if (gameOver || isDragging) return;
+
+            updateMousePosition(event);
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(cubes);
+
+            // 最初の表示されているキューブを見つける
+            for (let i = 0; i < intersects.length; i++) {
+                const cube = intersects[i].object;
+                if (cube.visible) {
+                    const { x, y, z } = cube.userData;
+                    toggleFlag(x, y, z);
+                    break;
+                }
+            }
+        }
+
+        function toggleFlag(x, y, z) {
+            const cell = grid[x][y][z];
+            if (cell.isRevealed) return;
+
+            cell.isFlagged = !cell.isFlagged;
+            flagCount += cell.isFlagged ? 1 : -1;
+
+            cell.cube.material.color.setHex(cell.isFlagged ? colors.flag : colors.unrevealed);
+            updateStatus();
+        }
+
+        function revealCell(x, y, z) {
+            const cell = grid[x][y][z];
+            if (cell.isRevealed || cell.isFlagged) return;
+
+            cell.isRevealed = true;
+            revealedCount++;
+
+            if (cell.isMine) {
+                // ゲームオーバー
+                gameOver = true;
+                cell.cube.material.color.setHex(colors.mine);
+                cell.cube.material.opacity = 1;
+                revealAllMines();
+                document.getElementById('face').textContent = '😵';
+                setTimeout(() => alert('ゲームオーバー!'), 100);
+            } else {
+                // キューブを非表示に
+                cell.cube.visible = false;
+
+                if (cell.neighborMines > 0) {
+                    // 数字を3Dテキストとして表示
+                    addNumberText(x, y, z, cell.neighborMines);
+                } else {
+                    // 周囲のセルを自動的に開く
+                    for (let dx = -1; dx <= 1; dx++) {
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dz = -1; dz <= 1; dz++) {
+                                const nx = x + dx;
+                                const ny = y + dy;
+                                const nz = z + dz;
+                                if (nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize && nz >= 0 && nz < gridSize) {
+                                    revealCell(nx, ny, nz);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 勝利判定
+                if (revealedCount === gridSize * gridSize * gridSize - mineCount) {
+                    gameOver = true;
+                    document.getElementById('face').textContent = '😎';
+                    setTimeout(() => alert('ゲームクリア!'), 100);
+                }
+            }
+        }
+
+        function addNumberText(x, y, z, number) {
+            const offset = gridSize / 2 - 0.5;
+
+            // キャンバスで数字テクスチャを作成
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            // 背景を透明に
+            ctx.clearRect(0, 0, 256, 256);
+
+            // 数字の色を設定
+            const numberColors = ['#3498db', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6', '#1abc9c', '#34495e', '#e67e22'];
+            ctx.fillStyle = numberColors[Math.min(number - 1, 7)];
+            ctx.font = 'bold 180px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(number, 128, 128);
+
+            // テクスチャを作成
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: texture,
+                transparent: true
+            });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.position.set(x - offset, y - offset, z - offset);
+            sprite.scale.set(0.7, 0.7, 0.7);
+            scene.add(sprite);
+
+            grid[x][y][z].textMesh = sprite;
+        }
+
+        function revealAllMines() {
+            for (let x = 0; x < gridSize; x++) {
+                for (let y = 0; y < gridSize; y++) {
+                    for (let z = 0; z < gridSize; z++) {
+                        if (grid[x][y][z].isMine) {
+                            grid[x][y][z].cube.material.color.setHex(colors.mine);
+                            grid[x][y][z].cube.material.opacity = 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateMousePosition(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        }
+
+        function onMouseMove(event) {
+            if (event.buttons === 1) {
+                isDragging = true;
+                const deltaX = event.movementX;
+                const deltaY = event.movementY;
+
+                // カメラを球面座標で回転
+                const radius = Math.sqrt(
+                    camera.position.x ** 2 +
+                    camera.position.y ** 2 +
+                    camera.position.z ** 2
+                );
+
+                const theta = Math.atan2(camera.position.x, camera.position.z);
+                const phi = Math.acos(camera.position.y / radius);
+
+                const newTheta = theta - deltaX * 0.01;
+                const newPhi = Math.max(0.1, Math.min(Math.PI - 0.1, phi + deltaY * 0.01));
+
+                camera.position.x = radius * Math.sin(newPhi) * Math.sin(newTheta);
+                camera.position.y = radius * Math.cos(newPhi);
+                camera.position.z = radius * Math.sin(newPhi) * Math.cos(newTheta);
+
+                camera.lookAt(0, 0, 0);
+            } else {
+                setTimeout(() => { isDragging = false; }, 100);
+            }
+        }
+
+        function onWheel(event) {
+            event.preventDefault();
+
+            // 現在のカメラ位置から原点までの距離を計算
+            const radius = Math.sqrt(
+                camera.position.x ** 2 +
+                camera.position.y ** 2 +
+                camera.position.z ** 2
+            );
+
+            // ホイールの動きに応じてズーム（距離を変更）
+            const zoomSpeed = 0.1;
+            const delta = event.deltaY > 0 ? 1 + zoomSpeed : 1 - zoomSpeed;
+            const newRadius = Math.max(5, Math.min(50, radius * delta)); // 最小5、最大50に制限
+
+            // 現在の方向を維持したまま距離だけ変更
+            const scale = newRadius / radius;
+            camera.position.x *= scale;
+            camera.position.y *= scale;
+            camera.position.z *= scale;
+
+            camera.lookAt(0, 0, 0);
+        }
+
+        function updateStatus() {
+            document.getElementById('mines').textContent = mineCount;
+            document.getElementById('flags').textContent = flagCount;
+        }
+
+        function resetGame() {
+            document.getElementById('face').textContent = '🙂';
+            initGame();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // 初期化
+        init();
+    </script>
+</body>
+</html>
