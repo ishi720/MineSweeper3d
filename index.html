@@ -104,6 +104,7 @@
         let hoveredCube = null;
         let gridLines = [];
         let gridVisible = false;
+        let explosionParticles = [];
 
         // 色の定義
         const colors = {
@@ -153,6 +154,9 @@
             // グリッドヘルパーの追加
             createGridLines();
 
+            // 床を追加
+            createFloor();
+
             // Raycasterの設定
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
@@ -169,6 +173,26 @@
 
             // アニメーション開始
             animate();
+        }
+
+        function createFloor() {
+            const floorSize = gridSize * 3;
+            const geometry = new THREE.PlaneGeometry(floorSize, floorSize);
+            const material = new THREE.MeshPhongMaterial({
+                color: 0x2c3e50,
+                side: THREE.DoubleSide,
+                shininess: 30
+            });
+            const floor = new THREE.Mesh(geometry, material);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -gridSize / 2 - 3;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // 床のグリッド線を追加（オプション）
+            const gridHelper = new THREE.GridHelper(floorSize, 20, 0x444444, 0x333333);
+            gridHelper.position.y = -gridSize / 2 - 2.9;
+            scene.add(gridHelper);
         }
 
         function createGridLines() {
@@ -188,8 +212,14 @@
                         const wireframe = new THREE.LineSegments(edges, material);
                         wireframe.position.set(x - offset, y - offset, z - offset);
                         wireframe.visible = gridVisible;
+                        wireframe.userData = { x, y, z, isGridLine: true };
                         scene.add(wireframe);
                         gridLines.push(wireframe);
+
+                        // グリッドをgridに保存（gridが存在する場合のみ）
+                        if (grid[x] && grid[x][y] && grid[x][y][z]) {
+                            grid[x][y][z].gridLine = wireframe;
+                        }
                     }
                 }
             }
@@ -216,6 +246,13 @@
                     }
                 }
             }
+
+            // 爆発パーティクルをクリア
+            explosionParticles.forEach(particle => {
+                scene.remove(particle.mesh);
+            });
+            explosionParticles = [];
+
             grid = [];
             cubes.forEach(cube => scene.remove(cube));
             cubes = [];
@@ -239,7 +276,8 @@
                             isFlagged: false,
                             neighborMines: 0,
                             cube: null,
-                            textMesh: null
+                            textMesh: null,
+                            gridLine: null
                         };
                     }
                 }
@@ -367,6 +405,129 @@
             updateStatus();
         }
 
+        function createExplosion(x, y, z) {
+            const offset = gridSize / 2 - 0.5;
+            const explosionCenter = new THREE.Vector3(x - offset, y - offset, z - offset);
+
+            // グリッド線を非表示にする
+            gridLines.forEach(line => {
+                line.visible = false;
+            });
+
+            // 全てのキューブと数字を爆発させる
+            for (let ix = 0; ix < gridSize; ix++) {
+                for (let iy = 0; iy < gridSize; iy++) {
+                    for (let iz = 0; iz < gridSize; iz++) {
+                        const cell = grid[ix][iy][iz];
+
+                        // キューブを爆発させる
+                        if (cell.cube && cell.cube.visible) {
+                            const cube = cell.cube;
+                            const cubePos = cube.position.clone();
+                            const distance = cubePos.distanceTo(explosionCenter);
+
+                            // 爆発の方向ベクトルを計算
+                            const direction = cubePos.clone().sub(explosionCenter).normalize();
+                            const force = Math.max(0.3, 1.5 - distance / 10); // 距離による力の減衰
+
+                            // 速度を設定（方向 × 力 × ランダム性）
+                            const velocity = direction.multiplyScalar(0.2 * force * (0.5 + Math.random()));
+                            velocity.y += 0.05 * force; // 上向きの力を追加
+
+                            // 回転速度
+                            const angularVelocity = new THREE.Vector3(
+                                (Math.random() - 0.5) * 0.2,
+                                (Math.random() - 0.5) * 0.2,
+                                (Math.random() - 0.5) * 0.2
+                            );
+
+                            // 透明度を有効化
+                            cube.material.transparent = true;
+
+                            explosionParticles.push({
+                                mesh: cube,
+                                velocity: velocity,
+                                angularVelocity: angularVelocity,
+                                life: Infinity // 消えない
+                            });
+
+                            // 地雷は赤く光らせる
+                            if (cell.isMine) {
+                                cube.material.color.setHex(0xff0000);
+                                cube.material.emissive = new THREE.Color(0xff0000);
+                                cube.material.emissiveIntensity = 1;
+                            }
+                        }
+
+                        // 数字スプライトも爆発させる
+                        if (cell.textMesh) {
+                            const sprite = cell.textMesh;
+                            const spritePos = sprite.position.clone();
+                            const distance = spritePos.distanceTo(explosionCenter);
+
+                            const direction = spritePos.clone().sub(explosionCenter).normalize();
+                            const force = Math.max(0.3, 1.5 - distance / 10);
+
+                            const velocity = direction.multiplyScalar(0.15 * force * (0.5 + Math.random()));
+                            velocity.y += 0.08 * force;
+
+                            const angularVelocity = new THREE.Vector3(
+                                (Math.random() - 0.5) * 0.15,
+                                (Math.random() - 0.5) * 0.15,
+                                (Math.random() - 0.5) * 0.15
+                            );
+
+                            explosionParticles.push({
+                                mesh: sprite,
+                                velocity: velocity,
+                                angularVelocity: angularVelocity,
+                                life: Infinity, // 消えない
+                                isSprite: true
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateExplosionParticles() {
+            const gravity = new THREE.Vector3(0, -0.01, 0);
+            const floorY = -gridSize / 2 - 3;
+
+            for (let i = explosionParticles.length - 1; i >= 0; i--) {
+                const particle = explosionParticles[i];
+
+                // 重力を適用
+                particle.velocity.add(gravity);
+
+                // 位置を更新
+                particle.mesh.position.add(particle.velocity);
+
+                // 床との衝突判定
+                if (particle.mesh.position.y < floorY + 0.5) {
+                    particle.mesh.position.y = floorY + 0.5;
+                    // 跳ね返り（減衰あり）
+                    particle.velocity.y = Math.abs(particle.velocity.y) * 0.5;
+                    // 横方向の速度も減衰
+                    particle.velocity.x *= 0.8;
+                    particle.velocity.z *= 0.8;
+                    // 回転速度も減衰
+                    if (!particle.isSprite) {
+                        particle.angularVelocity.multiplyScalar(0.7);
+                    }
+                }
+
+                // 回転を更新（スプライトは回転させない）
+                if (!particle.isSprite) {
+                    particle.mesh.rotation.x += particle.angularVelocity.x;
+                    particle.mesh.rotation.y += particle.angularVelocity.y;
+                    particle.mesh.rotation.z += particle.angularVelocity.z;
+                }
+
+                // 透明度は変更しない（消えないようにする）
+            }
+        }
+
         function revealCell(x, y, z) {
             const cell = grid[x][y][z];
             if (cell.isRevealed || cell.isFlagged) return;
@@ -379,9 +540,15 @@
                 gameOver = true;
                 cell.cube.material.color.setHex(colors.mine);
                 cell.cube.material.opacity = 1;
-                revealAllMines();
                 document.getElementById('face').textContent = '😵';
-                setTimeout(() => alert('ゲームオーバー!'), 100);
+
+                // 全ての爆発エフェクトを実行
+                createExplosion(x, y, z);
+
+                // 少し遅れてゲームオーバー表示
+                setTimeout(() => {
+                    alert('ゲームオーバー!');
+                }, 1000);
             } else {
                 // キューブを非表示に
                 cell.cube.visible = false;
@@ -573,6 +740,12 @@
 
         function animate() {
             requestAnimationFrame(animate);
+
+            // 爆発パーティクルを更新
+            if (explosionParticles.length > 0) {
+                updateExplosionParticles();
+            }
+
             renderer.render(scene, camera);
         }
 
