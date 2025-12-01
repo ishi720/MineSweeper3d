@@ -9,7 +9,6 @@
             margin: 0;
             overflow: hidden;
             font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
         #info {
             position: absolute;
@@ -55,9 +54,16 @@
             cursor: pointer;
             font-size: 16px;
             margin-top: 10px;
+            margin-right: 5px;
         }
         button:hover {
             background: #45a049;
+        }
+        #gridToggle {
+            background: #2196F3;
+        }
+        #gridToggle:hover {
+            background: #0b7dda;
         }
         #canvas-container {
             width: 100vw;
@@ -74,6 +80,7 @@
         <p>ドラッグ: 回転</p>
         <p>ホイール: ズーム</p>
         <button onclick="resetGame()">新しいゲーム</button>
+        <button id="gridToggle" onclick="toggleGrid()">グリッド: OFF</button>
     </div>
     <div id="status">
         <div class="emoji" id="face">🙂</div>
@@ -95,6 +102,8 @@
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
         let hoveredCube = null;
+        let gridLines = [];
+        let gridVisible = false;
 
         // 色の定義
         const colors = {
@@ -141,6 +150,9 @@
             directionalLight.castShadow = true;
             scene.add(directionalLight);
 
+            // グリッドヘルパーの追加
+            createGridLines();
+
             // Raycasterの設定
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
@@ -159,6 +171,38 @@
             animate();
         }
 
+        function createGridLines() {
+            const offset = gridSize / 2 - 0.5;
+
+            // ワイヤーフレームの立方体を各マスに配置
+            for (let x = 0; x < gridSize; x++) {
+                for (let y = 0; y < gridSize; y++) {
+                    for (let z = 0; z < gridSize; z++) {
+                        const geometry = new THREE.BoxGeometry(1, 1, 1);
+                        const edges = new THREE.EdgesGeometry(geometry);
+                        const material = new THREE.LineBasicMaterial({
+                            color: 0x444444,
+                            opacity: 0.1,
+                            transparent: true
+                        });
+                        const wireframe = new THREE.LineSegments(edges, material);
+                        wireframe.position.set(x - offset, y - offset, z - offset);
+                        wireframe.visible = gridVisible;
+                        scene.add(wireframe);
+                        gridLines.push(wireframe);
+                    }
+                }
+            }
+        }
+
+        function toggleGrid() {
+            gridVisible = !gridVisible;
+            gridLines.forEach(line => {
+                line.visible = gridVisible;
+            });
+            document.getElementById('gridToggle').textContent = gridVisible ? 'グリッド: ON' : 'グリッド: OFF';
+        }
+
         function initGame() {
             // グリッドとキューブをクリア
             for (let x = 0; x < gridSize; x++) {
@@ -175,6 +219,8 @@
             grid = [];
             cubes.forEach(cube => scene.remove(cube));
             cubes = [];
+            gridLines.forEach(line => scene.remove(line));
+            gridLines = [];
             hoveredCube = null;
             gameOver = false;
             flagCount = 0;
@@ -224,6 +270,9 @@
 
             // キューブを作成
             createCubes();
+
+            // グリッドを再作成
+            createGridLines();
         }
 
         function createCubes() {
