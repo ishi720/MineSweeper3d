@@ -4,73 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D マインスイーパー</title>
-    <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            font-family: Arial, sans-serif;
-        }
-        #info {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: white;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 15px 20px;
-            border-radius: 10px;
-            z-index: 100;
-            backdrop-filter: blur(10px);
-        }
-        #info h2 {
-            margin: 0 0 10px 0;
-            font-size: 24px;
-        }
-        #info p {
-            margin: 5px 0;
-            font-size: 14px;
-        }
-        #status {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            color: white;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 15px 20px;
-            border-radius: 10px;
-            z-index: 100;
-            backdrop-filter: blur(10px);
-            text-align: right;
-        }
-        #status .emoji {
-            font-size: 32px;
-            margin-bottom: 10px;
-        }
-        button {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-top: 10px;
-            margin-right: 5px;
-        }
-        button:hover {
-            background: #45a049;
-        }
-        #gridToggle {
-            background: #2196F3;
-        }
-        #gridToggle:hover {
-            background: #0b7dda;
-        }
-        #canvas-container {
-            width: 100vw;
-            height: 100vh;
-            cursor: default;
-        }
-    </style>
+    <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
     <div id="info">
