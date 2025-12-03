@@ -1,3 +1,5 @@
+'use strict';
+
 let scene, camera, renderer, raycaster, mouse;
 let grid = [];
 let gridSize = 10;
@@ -82,6 +84,9 @@ function init() {
     animate();
 }
 
+/**
+ * 床を作成
+ */
 function createFloor() {
     const floorSize = gridSize * 3;
     const geometry = new THREE.PlaneGeometry(floorSize, floorSize);
@@ -132,6 +137,9 @@ function createGridLines() {
     }
 }
 
+/**
+ * グリッド線の表示/非表示を切り替え
+ */
 function toggleGrid() {
     gridVisible = !gridVisible;
     gridLines.forEach(line => {
@@ -140,6 +148,9 @@ function toggleGrid() {
     document.getElementById('gridToggle').textContent = gridVisible ? 'グリッド: ON' : 'グリッド: OFF';
 }
 
+/**
+ * ゲームの初期化
+ */
 function initGame() {
     // グリッドとキューブをクリア
     for (let x = 0; x < gridSize; x++) {
@@ -220,6 +231,9 @@ function initGame() {
     createGridLines();
 }
 
+/**
+ * キューブを作成
+ */
 function createCubes() {
     const offset = gridSize / 2 - 0.5;
 
@@ -246,6 +260,13 @@ function createCubes() {
     }
 }
 
+/**
+ * 周囲の地雷数をカウント
+ * @param {number} x - X座標
+ * @param {number} y - Y座標
+ * @param {number} z - Z座標
+ * @return {number} - 周囲の地雷数
+ */
 function countNeighborMines(x, y, z) {
     let count = 0;
     for (let dx = -1; dx <= 1; dx++) {
@@ -264,6 +285,10 @@ function countNeighborMines(x, y, z) {
     return count;
 }
 
+/**
+ * マウスクリック時の処理
+ * @param {MouseEvent} event
+ */
 function onMouseClick(event) {
     if (gameOver || isDragging) return;
 
@@ -282,6 +307,10 @@ function onMouseClick(event) {
     }
 }
 
+/**
+ * 右クリック時の処理（フラグの設置/解除）
+ * @param {MouseEvent} event
+ */
 function onRightClick(event) {
     event.preventDefault();
     if (gameOver || isDragging) return;
@@ -301,6 +330,12 @@ function onRightClick(event) {
     }
 }
 
+/**
+ * フラグの設置/解除
+ * @param {number} x - X座標
+ * @param {number} y - Y座標
+ * @param {number} z - Z座標
+ */
 function toggleFlag(x, y, z) {
     const cell = grid[x][y][z];
     if (cell.isRevealed) return;
@@ -312,6 +347,12 @@ function toggleFlag(x, y, z) {
     updateStatus();
 }
 
+/**
+ * 爆発エフェクトを作成
+ * @param {number} x - 爆発のX座標
+ * @param {number} y - 爆発のY座標
+ * @param {number} z - 爆発のZ座標
+ */
 function createExplosion(x, y, z) {
     const offset = gridSize / 2 - 0.5;
     const explosionCenter = new THREE.Vector3(x - offset, y - offset, z - offset);
@@ -397,6 +438,9 @@ function createExplosion(x, y, z) {
     }
 }
 
+/**
+ * 爆発パーティクルを更新
+ */
 function updateExplosionParticles() {
     const gravity = new THREE.Vector3(0, -0.01, 0);
     const floorY = -gridSize / 2 - 3;
@@ -435,6 +479,12 @@ function updateExplosionParticles() {
     }
 }
 
+/**
+ * セルを開く
+ * @param {number} x - X座標
+ * @param {number} y - Y座標
+ * @param {number} z - Z座標
+ */
 function revealCell(x, y, z) {
     const cell = grid[x][y][z];
     if (cell.isRevealed || cell.isFlagged) return;
@@ -488,6 +538,13 @@ function revealCell(x, y, z) {
     }
 }
 
+/**
+ * 3Dテキストで数字を表示
+ * @param {number} x - X座標
+ * @param {number} y - Y座標
+ * @param {number} z - Z座標
+ * @param {number} number - 表示する数字
+ */
 function addNumberText(x, y, z, number) {
     const offset = gridSize / 2 - 0.5;
 
@@ -522,6 +579,9 @@ function addNumberText(x, y, z, number) {
     grid[x][y][z].textMesh = sprite;
 }
 
+/**
+ * 全ての地雷を表示
+ */
 function revealAllMines() {
     for (let x = 0; x < gridSize; x++) {
         for (let y = 0; y < gridSize; y++) {
@@ -535,12 +595,20 @@ function revealAllMines() {
     }
 }
 
+/**
+ * マウス位置を更新
+ * @param {MouseEvent} event
+ */
 function updateMousePosition(event) {
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 }
 
+/**
+ * マウス移動時の処理
+ * @param {MouseEvent} event
+ */
 function onMouseMove(event) {
     // ドラッグによる回転
     if (event.buttons === 1) {
@@ -605,6 +673,10 @@ function onMouseMove(event) {
     }
 }
 
+/**
+ * ホイール操作によるズーム
+ * @param {MouseEvent} event
+ */
 function onWheel(event) {
     event.preventDefault();
 
@@ -629,22 +701,34 @@ function onWheel(event) {
     camera.lookAt(0, 0, 0);
 }
 
+/**
+ * ステータス表示を更新
+ */
 function updateStatus() {
     document.getElementById('mines').textContent = mineCount;
     document.getElementById('flags').textContent = flagCount;
 }
 
+/**
+ * ゲームをリセット
+ */
 function resetGame() {
     document.getElementById('face').textContent = '🙂';
     initGame();
 }
 
+/**
+ * ウィンドウリサイズ時の処理
+ */
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+/**
+ * アニメーションループ
+ */
 function animate() {
     requestAnimationFrame(animate);
 
